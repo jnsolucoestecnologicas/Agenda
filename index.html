@@ -309,6 +309,15 @@ const weekStart = s => { const d=parseISO(s), w=d.getDay(); return iso(addDays(d
 const fmtBirth = s => { if(!s) return '—'; const [y,m,d]=s.split('-'); return `${d}/${m}/${y}`; };
 const svcNames = a => (a.servicos||[]).map(s=>s.nome).join(' + ');
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const waLink = (tel,text) => `https://api.whatsapp.com/send?phone=55${digits(tel)}${text?`&text=${encodeURIComponent(text)}`:''}`;
+// Mensagem pronta conforme a situação do agendamento
+function msgPara(a){
+  const c=a.clientes||{}, p=profPub(a.profissional_id), quando=(a.data===hoje()?'hoje':a.data===addISO(hoje(),1)?'amanhã':fmtLong(a.data))+` às ${hm(a.hora)}`;
+  if(a.status==='agendado') return `Olá, ${first(c.nome)}! 💈 Lembrete: seu horário na ${EMP.nome} é ${quando} com ${p.nome} (${svcNames(a)}).\n\nResponda:\n1 – Confirmar ✅\n2 – Remarcar 🔁\n3 – Cancelar ❌`;
+  if(a.status==='confirmado') return `Olá, ${first(c.nome)}! ✅ Seu horário na ${EMP.nome} está confirmado: ${quando} com ${p.nome}. Te esperamos! 💈`;
+  if(a.status==='aguardando_remarcacao') return `Olá, ${first(c.nome)}! Precisamos remarcar seu horário de ${fmtLong(a.data)} às ${hm(a.hora)}. Escolha um novo horário aqui: ${linkCliente()}`;
+  return `Olá, ${first(c.nome)}! Aqui é da ${EMP.nome}. 💈`;
+}
 
 async function rpc(fn, args){
   const { data, error } = await sb.rpc(fn, args||{});
@@ -701,7 +710,7 @@ function apCard(a,isPast,showBarber){
       ${a.status==='agendado'?`<button class="btn sm ghost" data-act="conf" data-id="${a.id}">✅ Cliente confirmou</button>`:''}
       ${a.data<=hoje()?`<button class="btn sm" data-act="done" data-id="${a.id}">✓ Atendido</button><button class="btn sm ghost" data-act="noshow" data-id="${a.id}">Faltou</button>`:''}
       ${!isPast?`<button class="btn sm ghost" data-act="move" data-id="${a.id}">🔁 Remarcar</button><button class="btn sm ghost" data-act="ask" data-id="${a.id}">⚠️ Imprevisto</button><button class="btn sm danger" data-act="cancel" data-id="${a.id}">Cancelar</button>`:''}
-      <a class="btn sm wa" href="https://wa.me/55${digits(c.telefone)}" target="_blank" rel="noopener">WhatsApp</a></div>`:''}
+      <a class="btn sm wa" href="${waLink(c.telefone,msgPara(a))}" target="_blank" rel="noopener">📲 Mensagem</a></div>`:''}
   </div></div>`;
 }
 async function apAction(act,a,me){
@@ -713,7 +722,7 @@ async function apAction(act,a,me){
     if(act==='move') return staffReschedule(a,me);
     if(act==='ask'){ const c=await confirmBox('Imprevisto com este horário?',`${esc(a.clientes.nome)} receberá no WhatsApp opções de novos horários. O horário atual fica livre.`,'Avisar cliente',false,true); if(!c) return; r=await rpc('painel_imprevisto',{p_ag:a.id,p_motivo:c.reason||null}); }
     if(act==='cancel'){ const c=await confirmBox('Cancelar este horário?',`${esc(a.clientes.nome)} será avisado no WhatsApp.`,'Cancelar horário',true,true); if(!c) return; r=await rpc('painel_cancelar',{p_ag:a.id,p_motivo:c.reason||null}); }
-    if(r && r.ok===false) toast(r.erro); else toast('Feito!');
+    if(r && r.ok===false) toast(r.erro==='Status inválido'?'Falta instalar o Script 3 no Supabase':r.erro); else toast(act==='conf'?'Presença confirmada ✅':'Feito!');
     panelAgenda(me);
   }catch(e){ toast('Erro: '+e.message); }
 }
@@ -796,7 +805,7 @@ async function panelMsgs(me){
     const feitos=list.filter(m=>m.canal==='whatsapp'&&m.status!=='pendente').slice(0,30);
     const emails=list.filter(m=>m.canal==='email'&&m.status==='pendente').length;
     const card=(m,acao)=>`<div class="out"><div class="row between wrapf"><div class="row"><span class="ch whatsapp">${esc(m.tipo)}</span><b class="small">${esc(m.nome_destino||'')}</b><span class="tiny dim">${fmtPhone(m.para)}</span></div><span class="tiny dim">${new Date(m.criado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span></div>
-      <pre>${esc(m.corpo)}</pre>${acao?`<div class="acts"><a class="btn sm wa" href="https://wa.me/55${digits(m.para)}?text=${encodeURIComponent(m.corpo)}" target="_blank" rel="noopener" data-sent="${m.id}">Enviar no WhatsApp</a><button class="btn sm ghost" data-mark="${m.id}">Já enviei</button></div>`:`<div class="tiny dim">${m.status==='manual'?'Enviada manualmente':m.status==='enviado'?'Enviada automaticamente':esc(m.status)}</div>`}</div>`;
+      <pre>${esc(m.corpo)}</pre>${acao?`<div class="acts"><a class="btn sm wa" href="${waLink(m.para,m.corpo)}" target="_blank" rel="noopener" data-sent="${m.id}">Enviar no WhatsApp</a><button class="btn sm ghost" data-mark="${m.id}">Já enviei</button></div>`:`<div class="tiny dim">${m.status==='manual'?'Enviada manualmente':m.status==='enviado'?'Enviada automaticamente':esc(m.status)}</div>`}</div>`;
     $('#bBody').innerHTML=`${scopeToggle()}
       <div class="banner info mt8">📲 <div>Enquanto o WhatsApp automático não é ligado, toque em <b>Enviar no WhatsApp</b>: o app abre com a mensagem pronta para o cliente. Depois toque em <b>Já enviei</b>.</div></div>
       <div class="card mt12"><div class="row between wrapf" style="gap:10px"><div class="grow"><b>Lembretes da véspera</b><div class="small muted">Gera as mensagens para os clientes do próximo dia de atendimento confirmarem, remarcarem ou cancelarem.</div></div><button class="btn sm" id="genRem">📅 Gerar lembretes</button></div></div>
@@ -870,7 +879,7 @@ async function panelReport(me){
     ${st.byDow.length?`<div class="rsec"><h4>Movimento por dia da semana</h4><div class="card"><div class="vb">${st.byDow.map(x=>`<div class="c"><em>${x.n}</em><i style="height:${x.n/maxD*100}%"></i><span>${DOW[x.d]}</span></div>`).join('')}</div></div></div>`:''}
     ${hr.length?`<div class="rsec"><h4>Horários mais procurados</h4><div class="card"><div class="vb">${hr.map(h=>`<div class="c"><em>${st.hours[h]}</em><i style="height:${st.hours[h]/maxH*100}%"></i><span>${h}h</span></div>`).join('')}</div></div></div>`:''}
     <div class="rsec"><h4>Clientes mais fiéis</h4><div class="card">${st.loyal.length?st.loyal.slice(0,5).map((v,i)=>`<div class="row between" style="padding:8px 0;border-bottom:1px solid var(--line)"><span><b>${i+1}º ${esc(v.name)}</b><br><span class="tiny dim">${fmtPhone(v.phone)}</span></span><span class="small" style="text-align:right"><b>${v.n} visitas</b><br><span class="muted">${money(v.spent)}</span></span></div>`).join(''):'<div class="small muted">Sem dados.</div>'}</div></div>
-    <div class="rsec"><h4>🎂 Aniversariantes de ${nextM}</h4><div class="card">${bd.length?bd.slice(0,15).map(c=>`<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line)"><span><b>${esc(c.nome)}</b> <span class="small muted">· dia ${c.dia}</span></span><a class="btn sm wa" href="https://wa.me/55${digits(c.telefone)}?text=${encodeURIComponent(`Feliz aniversário, ${first(c.nome)}! 🎉 A ${EMP.nome} te deseja um ótimo dia. Agende seu horário: ${linkCliente()}`)}" target="_blank" rel="noopener">Parabéns</a></div>`).join(''):'<div class="small muted">Nenhum aniversariante.</div>'}</div></div>
+    <div class="rsec"><h4>🎂 Aniversariantes de ${nextM}</h4><div class="card">${bd.length?bd.slice(0,15).map(c=>`<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line)"><span><b>${esc(c.nome)}</b> <span class="small muted">· dia ${c.dia}</span></span><a class="btn sm wa" href="${waLink(c.telefone,`Feliz aniversário, ${first(c.nome)}! 🎉 A ${EMP.nome} te deseja um ótimo dia. Agende seu horário: ${linkCliente()}`)}" target="_blank" rel="noopener">Parabéns</a></div>`).join(''):'<div class="small muted">Nenhum aniversariante.</div>'}</div></div>
     <button class="btn ghost full mt16" id="rCsv">⬇️ Baixar planilha do mês</button>`;
   $('#rPrev').onclick=()=>{ rMonth=ymShift(rMonth,-1); panelReport(me); };
   $('#rNext').onclick=()=>{ rMonth=ymShift(rMonth,1); panelReport(me); };
