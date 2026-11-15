@@ -255,6 +255,15 @@ table.t th{color:var(--muted);font-weight:500;font-size:12px}
 .pinbox{display:flex;gap:8px;justify-content:center;margin:14px 0}
 .qrwrap{display:flex;justify-content:center}
 #poster{width:100%;max-width:380px;border-radius:16px;border:1px solid var(--line);display:block;margin:0 auto}
+
+html,body{overflow-x:hidden;max-width:100%}
+input,select,textarea{min-width:0;max-width:100%}
+input[type=time],input[type=date]{-webkit-appearance:none;appearance:none;min-height:46px;text-align:left}
+.grid2>*{min-width:0}
+.ptabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px;margin:14px 0}
+.ptabs button{padding:10px 4px;border-radius:9px;font-size:13px;color:var(--muted);text-align:center}
+.ptabs button.on{background:var(--gold);color:#16120a;font-weight:700}
+.demobar .lbl{max-width:110px;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -557,29 +566,55 @@ async function clientReschedule(a){
 /* =========================================================================
    PROFISSIONAL · LOGIN
    ========================================================================= */
-let L={email:'',sent:false,busy:false};
+let L={mode:'senha',email:'',sent:false,busy:false};
+let NEED_PASS=false;
 function viewLogin(){
-  app.innerHTML=`<div class="wrap">${hero('Área do profissional')}<div class="card">
-    ${!L.sent?`<label class="f"><span>Seu e-mail cadastrado</span><input id="lEmail" type="email" inputmode="email" autocomplete="email" placeholder="voce@email.com" value="${esc(L.email)}"></label>
-      <button class="btn full" id="lSend" ${L.busy?'disabled':''}>${L.busy?'Enviando…':'Receber código de acesso'}</button>
-      <p class="hint mt12">Enviamos um código de 6 dígitos para o seu e-mail. Sem senha para decorar.</p>`
-    :`<div class="banner gold">📧 <div>Enviamos um e-mail para <b>${esc(L.email)}</b>.<br>Abra o e-mail <b>neste celular</b> e toque no botão de acesso (<i>Log In</i> / <i>Confirm</i>). Confira também a caixa de spam.</div></div>
-      <p class="small muted mt12">Se o e-mail trouxer um código de 6 dígitos, digite aqui:</p>
-      <label class="f mt8"><span>Código (opcional)</span><input id="lCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="000000" style="font-size:22px;letter-spacing:.3em;text-align:center"></label>
-      <button class="btn full" id="lOk" ${L.busy?'disabled':''}>${L.busy?'Entrando…':'Entrar'}</button>
-      <p class="mt12" style="text-align:center"><button class="linkbtn" id="lBack">Usar outro e-mail</button></p>`}
-  </div></div>`;
+  const tabs=`<div class="subtabs" style="margin:0 0 14px"><button class="${L.mode==='senha'?'on':''}" data-lm="senha">🔑 Entrar</button><button class="${L.mode==='link'?'on':''}" data-lm="link">✉️ Primeiro acesso</button></div>`;
+  let body='';
+  if(L.mode==='senha'){
+    body=`<label class="f"><span>E-mail</span><input id="lEmail" type="email" inputmode="email" autocomplete="username" placeholder="voce@email.com" value="${esc(L.email)}"></label>
+      <label class="f"><span>Senha</span><input id="lPass" type="password" autocomplete="current-password" placeholder="••••••"></label>
+      <button class="btn full" id="lIn" ${L.busy?'disabled':''}>${L.busy?'Entrando…':'Entrar'}</button>
+      <p class="hint mt12">Ainda não tem senha ou esqueceu? Toque em <b>Primeiro acesso</b>.</p>`;
+  } else if(!L.sent){
+    body=`<p class="small muted">Vamos mandar um link para o seu e-mail. Ao tocar nele, você entra e cria sua senha. Depois é só entrar com e-mail e senha.</p>
+      <label class="f mt12"><span>Seu e-mail cadastrado</span><input id="lEmail" type="email" inputmode="email" autocomplete="email" placeholder="voce@email.com" value="${esc(L.email)}"></label>
+      <button class="btn full" id="lSend" ${L.busy?'disabled':''}>${L.busy?'Enviando…':'Enviar link de acesso'}</button>`;
+  } else {
+    body=`<div class="banner gold">📧 <div>Enviamos um e-mail para <b>${esc(L.email)}</b>.<br><br>1. Abra o e-mail <b>no Safari ou no Chrome deste celular</b> (veja também o Spam).<br>2. Toque no link de acesso.<br>3. O site abre e pede para você <b>criar sua senha</b>.</div></div>
+      <p class="hint mt12">O link vale uma vez só. Se der "link expirado", peça outro aqui em alguns minutos.</p>
+      <p class="mt12" style="text-align:center"><button class="linkbtn" id="lBack">Voltar</button></p>`;
+  }
+  app.innerHTML=`<div class="wrap">${hero('Área do profissional')}<div class="card">${tabs}${body}</div></div>`;
+  app.querySelectorAll('[data-lm]').forEach(b=>b.onclick=()=>{ L.mode=b.dataset.lm; L.sent=false; viewLogin(); });
+  const inb=$('#lIn'); if(inb){ const go_=async()=>{ L.email=$('#lEmail').value.trim().toLowerCase(); const pw=$('#lPass').value;
+      if(!L.email||!pw) return toast('Digite e-mail e senha');
+      L.busy=true; viewLogin();
+      const {error}=await sb.auth.signInWithPassword({email:L.email,password:pw});
+      L.busy=false;
+      if(error){ toast(/confirm/i.test(error.message)?'Confirme seu e-mail pelo link primeiro':'E-mail ou senha incorretos. Primeiro acesso? Use a outra aba.'); viewLogin(); return; }
+      await afterLogin(); L.busy=false; render(); };
+    inb.onclick=go_; $('#lPass').onkeydown=e=>{ if(e.key==='Enter') go_(); }; }
   const s=$('#lSend'); if(s) s.onclick=async()=>{ L.email=$('#lEmail').value.trim().toLowerCase(); if(!/^\S+@\S+\.\S+$/.test(L.email)) return toast('E-mail inválido');
     L.busy=true; viewLogin();
     const {error}=await sb.auth.signInWithOtp({email:L.email,options:{shouldCreateUser:true,emailRedirectTo:linkCliente()}});
-    L.busy=false; if(error){ toast(/rate|limit|seconds/i.test(error.message)?'Aguarde um minuto e tente de novo.':'Não foi possível enviar: '+error.message); viewLogin(); return; }
+    L.busy=false; if(error){ toast(/rate|limit|seconds|security/i.test(error.message)?'Muitos envios. Aguarde alguns minutos e tente de novo.':'Não foi possível enviar: '+error.message); viewLogin(); return; }
     L.sent=true; viewLogin(); };
-  const o=$('#lOk'); if(o) o.onclick=async()=>{ const code=digits($('#lCode').value); if(code.length<6) return toast('Digite o código');
-    L.busy=true; viewLogin();
-    const {error}=await sb.auth.verifyOtp({email:L.email,token:code,type:'email'});
-    L.busy=false; if(error){ toast('Código inválido ou expirado'); viewLogin(); return; }
-    await afterLogin(); L={email:'',sent:false,busy:false}; render(); };
   const bk=$('#lBack'); if(bk) bk.onclick=()=>{ L.sent=false; viewLogin(); };
+}
+function passwordModal(first){
+  modal(`<h3>${first?'Crie sua senha':'Alterar senha'}</h3>
+    <p class="small muted mt8">${first?'Pronto, você entrou! Crie uma senha para os próximos acessos (no celular, no ícone da Tela de Início ou em outro aparelho).':'Escolha uma nova senha com pelo menos 6 caracteres.'}</p>
+    <label class="f mt12"><span>Nova senha (mínimo 6)</span><input id="np1" type="password" autocomplete="new-password"></label>
+    <label class="f"><span>Repita a senha</span><input id="np2" type="password" autocomplete="new-password"></label>
+    <div class="row mt12"><button class="btn ghost grow" id="npNo">${first?'Depois':'Cancelar'}</button><button class="btn grow" id="npOk">Salvar senha</button></div>`, box=>{
+    box.querySelector('#npNo').onclick=closeModal;
+    box.querySelector('#npOk').onclick=async()=>{ const a=box.querySelector('#np1').value, b=box.querySelector('#np2').value;
+      if(a.length<6) return toast('A senha precisa ter pelo menos 6 caracteres'); if(a!==b) return toast('As senhas não são iguais');
+      const {error}=await sb.auth.updateUser({password:a});
+      if(error) return toast('Não foi possível salvar: '+error.message);
+      closeModal(); toast('Senha criada! Nos próximos acessos, entre com e-mail e senha.'); };
+  });
 }
 async function afterLogin(){
   try{ ME=await rpc('vincular_conta'); }catch(e){ ME=null; }
@@ -610,8 +645,8 @@ function viewPanel(){
   tabs.push(['msgs','💬 WhatsApp']); if(isOwner()) tabs.push(['rel','📊 Relatório']); tabs.push(['qr','🔳 QR']);
   if(!tabs.some(t=>t[0]===bTab)) bTab='agenda';
   app.innerHTML=`<div class="wrap wide">
-    <div class="row between mt16"><div class="row">${avatarHTML(me,48)}<div><div class="tiny dim">${myProf()?'PAINEL DO BARBEIRO':'PAINEL · ADMINISTRADOR'}</div><h2 style="margin:0">Olá, ${esc(first(me.nome))}</h2></div></div><button class="btn sm ghost" onclick="logout()">Sair</button></div>
-    <div class="subtabs" style="overflow-x:auto">${tabs.map(([k,l])=>`<button class="${bTab===k?'on':''}" data-bt="${k}" style="white-space:nowrap">${l}</button>`).join('')}</div>
+    <div class="row between mt16"><div class="row">${avatarHTML(me,48)}<div><div class="tiny dim">${myProf()?'PAINEL DO BARBEIRO':'PAINEL · ADMINISTRADOR'}</div><h2 style="margin:0">Olá, ${esc(first(me.nome))}</h2></div></div><div class="row" style="gap:6px"><button class="btn sm ghost" onclick="passwordModal(false)">🔑</button><button class="btn sm ghost" onclick="logout()">Sair</button></div></div>
+    <div class="ptabs">${tabs.map(([k,l])=>`<button class="${bTab===k?'on':''}" data-bt="${k}">${l}</button>`).join('')}</div>
     <div id="bBody"><div class="empty">⏳ Carregando…</div></div></div>`;
   app.querySelectorAll('[data-bt]').forEach(b=>b.onclick=()=>{ bTab=b.dataset.bt; draft=null; viewPanel(); });
   ({agenda:panelAgenda,disp:panelAvail,msgs:panelMsgs,rel:panelReport,qr:panelQR})[bTab](me);
@@ -640,7 +675,8 @@ async function panelAgenda(me){
       <div class="stats"><div class="stat"><b>${live.length}</b><span>atendimentos</span></div><div class="stat"><b>${live.filter(a=>a.status==='confirmado').length}</b><span>confirmados</span></div><div class="stat"><b>${money(live.reduce((s,a)=>s+Number(a.valor_final),0)).replace('R$ ','')}</b><span>previsto (R$)</span></div></div>
       ${list.length?list.map(a=>apCard(a,isPast,all)).join(''):`<div class="empty">Nenhum agendamento neste dia.</div>`}
       ${myProf()&&!all&&!isPast?`<button class="btn danger full mt16" id="closeDay">⚠️ Imprevisto: não vou atender ${bDate===hoje()?'hoje':'neste dia'}</button><p class="hint">Fecha o dia e envia aos clientes opções de novos horários.</p>`:''}
-      <p class="mt16" style="text-align:center"><button class="linkbtn" id="reload">↻ Atualizar</button></p>`;
+      <p class="mt16" style="text-align:center"><button class="linkbtn" id="reload">↻ Atualizar</button></p>
+      <p class="hint" style="text-align:center">Quando o cliente responder o lembrete no WhatsApp, toque em "✅ Cliente confirmou", "🔁 Remarcar" ou "Cancelar".</p>`;
     $('#bBody').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{ bDate=b.dataset.d; draw(); });
     bindScope($('#bBody'),draw);
     $('#reload').onclick=()=>panelAgenda(me);
@@ -662,6 +698,7 @@ function apCard(a,isPast,showBarber){
     <div class="small muted">${esc(svcNames(a))} · ${Number(a.desconto_pct)?`<span class="gold">${money(a.valor_final)} (-${Number(a.desconto_pct)}%)</span>`:money(a.valor_final)}${a.visita_no_mes>1?` · ${a.visita_no_mes}ª visita no mês`:''}</div>
     <div class="small muted">📱 ${fmtPhone(c.telefone)}${a.lembrete_enviado&&a.status==='agendado'?' · lembrete enviado':''}</div>
     ${active?`<div class="acts">
+      ${a.status==='agendado'?`<button class="btn sm ghost" data-act="conf" data-id="${a.id}">✅ Cliente confirmou</button>`:''}
       ${a.data<=hoje()?`<button class="btn sm" data-act="done" data-id="${a.id}">✓ Atendido</button><button class="btn sm ghost" data-act="noshow" data-id="${a.id}">Faltou</button>`:''}
       ${!isPast?`<button class="btn sm ghost" data-act="move" data-id="${a.id}">🔁 Remarcar</button><button class="btn sm ghost" data-act="ask" data-id="${a.id}">⚠️ Imprevisto</button><button class="btn sm danger" data-act="cancel" data-id="${a.id}">Cancelar</button>`:''}
       <a class="btn sm wa" href="https://wa.me/55${digits(c.telefone)}" target="_blank" rel="noopener">WhatsApp</a></div>`:''}
@@ -670,6 +707,7 @@ function apCard(a,isPast,showBarber){
 async function apAction(act,a,me){
   try{
     let r;
+    if(act==='conf') r=await rpc('painel_status',{p_ag:a.id,p_status:'confirmado'});
     if(act==='done') r=await rpc('painel_status',{p_ag:a.id,p_status:'concluido'});
     if(act==='noshow') r=await rpc('painel_status',{p_ag:a.id,p_status:'faltou'});
     if(act==='move') return staffReschedule(a,me);
@@ -761,10 +799,13 @@ async function panelMsgs(me){
       <pre>${esc(m.corpo)}</pre>${acao?`<div class="acts"><a class="btn sm wa" href="https://wa.me/55${digits(m.para)}?text=${encodeURIComponent(m.corpo)}" target="_blank" rel="noopener" data-sent="${m.id}">Enviar no WhatsApp</a><button class="btn sm ghost" data-mark="${m.id}">Já enviei</button></div>`:`<div class="tiny dim">${m.status==='manual'?'Enviada manualmente':m.status==='enviado'?'Enviada automaticamente':esc(m.status)}</div>`}</div>`;
     $('#bBody').innerHTML=`${scopeToggle()}
       <div class="banner info mt8">📲 <div>Enquanto o WhatsApp automático não é ligado, toque em <b>Enviar no WhatsApp</b>: o app abre com a mensagem pronta para o cliente. Depois toque em <b>Já enviei</b>.</div></div>
+      <div class="card mt12"><div class="row between wrapf" style="gap:10px"><div class="grow"><b>Lembretes da véspera</b><div class="small muted">Gera as mensagens para os clientes do próximo dia de atendimento confirmarem, remarcarem ou cancelarem.</div></div><button class="btn sm" id="genRem">📅 Gerar lembretes</button></div></div>
       ${emails?`<p class="hint mt8">${emails} e-mail(s) para barbeiros aguardando o envio automático (próximo passo da instalação).</p>`:''}
       <h3 class="mt16">Para enviar (${pend.length})</h3>${pend.length?pend.map(m=>card(m,true)).join(''):'<div class="empty mt8">Nenhuma mensagem pendente. 👍</div>'}
       ${feitos.length?`<h3 class="mt24">Enviadas</h3>${feitos.map(m=>card(m,false)).join('')}`:''}`;
     bindScope($('#bBody'),draw);
+    $('#genRem').onclick=async()=>{ try{ const r=await rpc('painel_lembretes'); if(!r.ok) return toast(r.erro);
+      toast(r.total?`${r.total} lembrete(s) gerados para ${fmtDate(r.data)}. Envie abaixo.`:'Nenhum lembrete novo para gerar.'); panelMsgs(me); }catch(e){ toast('Erro: '+e.message); } };
     const mark=async id=>{ try{ await rpc('painel_marcar_enviada',{p_msg:Number(id)}); const m=data.find(x=>x.id==id); if(m) m.status='manual'; draw(); }catch(e){ toast('Erro: '+e.message); } };
     $('#bBody').querySelectorAll('[data-mark]').forEach(b=>b.onclick=()=>mark(b.dataset.mark));
     $('#bBody').querySelectorAll('[data-sent]').forEach(b=>b.addEventListener('click',()=>setTimeout(()=>mark(b.dataset.sent),800)));
@@ -886,7 +927,7 @@ async function viewAdmin(){
   const S=(svcs||[]).filter(s=>s.empresa_id===emp.id), PR=(profs||[]).filter(p=>p.empresa_id===emp.id);
   P.profs=PR; P.empCfg=emp;
   const days=[1,2,3,4,5,6,0].map(d=>`<button class="tab ${emp.dias_semana.includes(d)?'on':''}" data-wd="${d}" style="border:1px solid var(--line)">${DOW[d]}</button>`).join('');
-  app.innerHTML=`<div class="wrap wide"><div class="row between mt16"><div><div class="tiny dim">ADMINISTRADOR · ${esc(GESTORA).toUpperCase()}</div><h2>${esc(emp.nome)}</h2></div><button class="btn sm ghost" onclick="logout()">Sair</button></div>
+  app.innerHTML=`<div class="wrap wide"><div class="row between mt16"><div><div class="tiny dim">ADMINISTRADOR · ${esc(GESTORA).toUpperCase()}</div><h2>${esc(emp.nome)}</h2></div><div class="row" style="gap:6px"><button class="btn sm ghost" onclick="passwordModal(false)">🔑</button><button class="btn sm ghost" onclick="logout()">Sair</button></div></div>
   <div class="sect"><h3>Agenda</h3><div class="card">
     <div class="small muted">Duração de cada atendimento</div><div class="row wrapf mt8">${[15,20,30,40,45,60].map(m=>`<button class="tab ${emp.duracao_min===m?'on':''}" data-slot="${m}" style="border:1px solid var(--line)">${m} min</button>`).join('')}</div>
     <div class="grid2 mt16"><label class="f"><span>Abre às</span><input type="time" data-e="abre" value="${hm(emp.abre)}"></label><label class="f"><span>Fecha às</span><input type="time" data-e="fecha" value="${hm(emp.fecha)}"></label></div>
@@ -935,7 +976,7 @@ async function viewAdmin(){
   // Volta do link de acesso enviado por e-mail (tokens no endereço)
   const hp=new URLSearchParams(location.hash.slice(1));
   if(hp.get('access_token')){
-    try{ await sb.auth.setSession({access_token:hp.get('access_token'),refresh_token:hp.get('refresh_token')}); }catch(e){}
+    try{ await sb.auth.setSession({access_token:hp.get('access_token'),refresh_token:hp.get('refresh_token')}); NEED_PASS=true; }catch(e){}
     history.replaceState(null,'',location.pathname+location.search+'#profissional');
   } else if(hp.get('error') || hp.get('error_description')){
     history.replaceState(null,'',location.pathname+location.search+'#profissional');
@@ -944,6 +985,7 @@ async function viewAdmin(){
   const { data:{ session } } = await sb.auth.getSession();
   if(session) await afterLogin();
   render();
+  if(NEED_PASS && ME){ NEED_PASS=false; setTimeout(()=>passwordModal(true),500); }
 })();
 
 </script>
