@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Contador da sala de espera · Impacto</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#141210;color:#f3ead8;font-family:-apple-system,system-ui,sans-serif;min-height:100vh}
+header{padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #c9a24a}
+header b{font-size:15px}header span{font-size:12px;color:#c9a24a}
+#stage{position:relative;width:100%;background:#000;touch-action:none}
+video{display:block;width:100%;height:auto}
+canvas{position:absolute;inset:0;width:100%;height:100%}
+.panel{padding:14px 16px}
+.big{display:flex;align-items:baseline;gap:10px}
+.big .n{font-size:64px;font-weight:800;color:#fff;line-height:1}
+.big .l{font-size:16px;color:#d9cdb5}
+.st{font-size:13px;color:#b8ab93;margin-top:6px;line-height:1.5}
+.ok{color:#7fd17f}.err{color:#ff8a7a}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{background:#c9a24a;color:#141210;border:0;border-radius:8px;padding:12px 14px;font-weight:700;font-size:15px}
+button.sec{background:#2a2621;color:#f3ead8;border:1px solid #4a4237}
+.tip{font-size:13px;color:#d9cdb5;background:#1f1c18;border:1px solid #3a332a;border-radius:8px;padding:10px 12px;margin-top:12px;line-height:1.5}
+#start{width:100%;padding:18px;font-size:18px;margin-top:8px}
+</style></head><body>
+<header><b>Contador da sala de espera</b><span>Impacto Barbearia · J&amp;N</span></header>
+<div id="stage" hidden><video id="v" playsinline muted autoplay></video><canvas id="c"></canvas></div>
+<div class="panel">
+  <div class="big"><span class="n" id="n">–</span><span class="l">pessoas aguardando</span></div>
+  <div class="st" id="st">Toque em "Iniciar" para ligar a câmera.</div>
+  <button id="start">▶ Iniciar contagem</button>
+  <div class="btns" id="ctl" hidden>
+    <button class="sec" id="zone">✏️ Marcar área de espera</button>
+    <button class="sec" id="clear">Usar tela toda</button>
+    <button class="sec" id="flip">🔄 Trocar câmera</button>
+  </div>
+  <div class="tip">
+    <b>Como usar:</b> prenda o celular na parede de frente para o sofá, ligado no carregador. Toque em <b>Marcar área de espera</b> e arraste o dedo sobre a imagem para desenhar um retângulo só em volta do sofá (sem as cadeiras de corte). Deixe esta tela aberta: a contagem é enviada sozinha a cada 30 segundos.<br><br>
+    🔒 Nenhuma imagem é gravada ou enviada. Só o número de pessoas sai deste aparelho.
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+const SB='https://uvwqpsvxsvdjkofwiqbk.supabase.co', KEY='sb_publishable_ajFii291n0ZanhmNdfnvdg_IKb6qlkK';
+const P=new URLSearchParams(location.search), SLUG=P.get('e')||'impacto', TOKEN=P.get('t')||'';
+const $=id=>document.getElementById(id), v=$('v'), c=$('c'), ctx=c.getContext('2d');
+let model=null, facing='environment', stream=null, zone=null, drawing=false, start=null, hist=[], last=null, lock=null, lastSent=0;
+try{ zone=JSON.parse(localStorage.getItem('jn_zona_'+SLUG)||'null'); }catch(_){}
+const st=(t,cls)=>{ $('st').innerHTML=t; $('st').className='st '+(cls||''); };
+if(!TOKEN) st('Link sem a chave do aparelho. Use o link enviado pela J&amp;N.','err');
+
+async function cam(){
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:640},height:{ideal:480}},audio:false});
+  v.srcObject=stream; await v.play();
+}
+async function wake(){ try{ if('wakeLock' in navigator){ lock=await navigator.wakeLock.request('screen'); } }catch(_){} }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') wake(); });
+
+$('start').onclick=async()=>{
+  $('start').disabled=true; st('Ligando a câmera…');
+  try{ await cam(); }catch(e){ $('start').disabled=false; return st('Não consegui abrir a câmera. Permita o acesso à câmera e tente de novo.','err'); }
+  $('stage').hidden=false; $('ctl').hidden=false; $('start').hidden=true; wake();
+  st('Carregando a inteligência de contagem (só na primeira vez demora um pouco)…');
+  try{ model=await cocoSsd.load({base:'lite_mobilenet_v2'}); }catch(e){ return st('Falha ao carregar a contagem. Verifique a internet e recarregue a página.','err'); }
+  st('Contando…'); loop();
+};
+$('flip').onclick=async()=>{ facing=facing==='environment'?'user':'environment'; try{ await cam(); }catch(_){} };
+$('clear').onclick=()=>{ zone=null; localStorage.removeItem('jn_zona_'+SLUG); };
+$('zone').onclick=()=>{ drawing=true; st('Arraste o dedo sobre a imagem para marcar a área de espera.'); };
+
+const rel=e=>{ const r=c.getBoundingClientRect(), p=e.touches?e.touches[0]:e; return {x:(p.clientX-r.left)/r.width, y:(p.clientY-r.top)/r.height}; };
+const down=e=>{ if(!drawing) return; e.preventDefault(); start=rel(e); zone={x:start.x,y:start.y,w:0,h:0}; };
+const move=e=>{ if(!drawing||!start) return; e.preventDefault(); const p=rel(e);
+  zone={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(p.x-start.x),h:Math.abs(p.y-start.y)}; };
+const up=()=>{ if(!drawing||!start) return; drawing=false; start=null;
+  if(zone && zone.w>0.05 && zone.h>0.05){ localStorage.setItem('jn_zona_'+SLUG,JSON.stringify(zone)); st('Área salva. Contando…','ok'); } else { zone=null; st('Área muito pequena. Toque em marcar de novo.'); } };
+c.addEventListener('touchstart',down,{passive:false}); c.addEventListener('touchmove',move,{passive:false}); c.addEventListener('touchend',up);
+c.addEventListener('mousedown',down); c.addEventListener('mousemove',move); c.addEventListener('mouseup',up);
+
+function median(a){ const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]; }
+
+async function loop(){
+  try{
+    if(v.readyState>=2){
+      const W=v.videoWidth, H=v.videoHeight; c.width=W; c.height=H;
+      const preds=(await model.detect(v,20,0.45)).filter(p=>p.class==='person');
+      ctx.clearRect(0,0,W,H);
+      let n=0;
+      preds.forEach(p=>{ const [x,y,w,h]=p.bbox, cx=(x+w/2)/W, cy=(y+h/2)/H;
+        const inside=!zone||(cx>=zone.x&&cx<=zone.x+zone.w&&cy>=zone.y&&cy<=zone.y+zone.h);
+        if(inside) n++;
+        ctx.lineWidth=3; ctx.strokeStyle=inside?'#7fd17f':'rgba(255,255,255,.35)'; ctx.strokeRect(x,y,w,h); });
+      if(zone){ ctx.setLineDash([10,6]); ctx.lineWidth=3; ctx.strokeStyle='#c9a24a'; ctx.strokeRect(zone.x*W,zone.y*H,zone.w*W,zone.h*H); ctx.setLineDash([]); }
+      hist.push(n); if(hist.length>15) hist.shift();
+      const m=median(hist); $('n').textContent=m;
+      if(Date.now()-lastSent>30000 && hist.length>=5){ lastSent=Date.now(); send(m); }
+    }
+  }catch(e){ console.log(e); }
+  setTimeout(loop,1000);
+}
+
+async function send(n){
+  if(!TOKEN) return;
+  try{
+    const r=await fetch(SB+'/rest/v1/rpc/fila_atualizar',{method:'POST',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({p_slug:SLUG,p_token:TOKEN,p_pessoas:n})});
+    const j=await r.json();
+    if(j && j.ok){ last=new Date(); st('Contando… ✅ Enviado às '+last.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+(zone?'':' · área: tela toda'),'ok'); }
+    else st('Não enviado: '+((j&&j.erro)||'erro')+'. Confira o link do aparelho.','err');
+  }catch(e){ st('Sem internet no momento. Tentando de novo em 30 s…','err'); }
+}
+</script></body></html>

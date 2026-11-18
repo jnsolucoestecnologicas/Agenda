@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Movimento agora · Impacto Barbearia</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#141210;color:#f3ead8;font-family:-apple-system,system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{width:100%;max-width:380px;background:#1f1c18;border:2px solid #c9a24a;border-radius:16px;padding:28px 22px;text-align:center}
+.k{font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:#c9a24a}
+h1{font-size:20px;margin:6px 0 18px}
+.n{font-size:80px;font-weight:800;line-height:1;color:#fff}
+.l{font-size:17px;color:#d9cdb5;margin-top:6px}
+.t{font-size:22px;font-weight:700;margin-top:16px}
+.s{font-size:12px;color:#9a8f7f;margin-top:16px}
+.off{font-size:16px;color:#d9cdb5;line-height:1.5}
+a{display:block;margin-top:20px;background:#c9a24a;color:#141210;text-decoration:none;font-weight:700;padding:14px;border-radius:10px}
+</style></head><body>
+<div class="card"><div class="k">Movimento agora</div><h1>Impacto Barbearia</h1><div id="box"><div class="off">Carregando…</div></div>
+<a href="./">Agendar horário</a><div class="s">Atualiza sozinho a cada 30 segundos · J&amp;N Soluções Tecnológicas</div></div>
+<script>
+const SB='https://uvwqpsvxsvdjkofwiqbk.supabase.co', KEY='sb_publishable_ajFii291n0ZanhmNdfnvdg_IKb6qlkK';
+const SLUG=new URLSearchParams(location.search).get('e')||'impacto';
+async function upd(){
+  try{
+    const r=await fetch(SB+'/rest/v1/rpc/public_fila',{method:'POST',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},body:JSON.stringify({p_slug:SLUG})});
+    const j=await r.json(), b=document.getElementById('box');
+    if(!j.ativo){ b.innerHTML='<div class="off">A contagem da sala de espera está desligada no momento.</div>'; return; }
+    const hh=new Date(j.atualizado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    b.innerHTML=j.pessoas===0
+      ? '<div class="n">0</div><div class="l">ninguém aguardando</div><div class="t">✅ Pode vir agora!</div>'
+      : `<div class="n">${j.pessoas}</div><div class="l">${j.pessoas===1?'pessoa aguardando':'pessoas aguardando'}</div><div class="t">⏱ cerca de ${j.minutos} min</div>`;
+    b.innerHTML+=`<div class="s">Atualizado às ${hh}</div>`;
+  }catch(e){}
+}
+upd(); setInterval(upd,30000);
+</script></body></html>
