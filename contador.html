@@ -31,11 +31,12 @@ button.sec{background:#2a2621;color:#f3ead8;border:1px solid #4a4237}
   <button id="start">▶ Iniciar contagem</button>
   <div class="btns" id="ctl" hidden>
     <button class="sec" id="zone">✏️ Marcar área de espera</button>
-    <button class="sec" id="clear">Usar tela toda</button>
+    <button class="sec" id="compb">🚫 Marcar área de acompanhantes</button>
+    <button class="sec" id="clear">Apagar áreas</button>
     <button class="sec" id="flip">🔄 Trocar câmera</button>
   </div>
   <div class="tip">
-    <b>Como usar:</b> prenda o celular na parede de frente para o sofá, ligado no carregador. Toque em <b>Marcar área de espera</b> e arraste o dedo sobre a imagem para desenhar um retângulo só em volta do sofá (sem as cadeiras de corte). Deixe esta tela aberta: a contagem é enviada sozinha a cada 30 segundos.<br><br>
+    <b>Como usar:</b> prenda o celular na parede de frente para o sofá, ligado no carregador. Toque em <b>Marcar área de espera</b> e arraste o dedo em volta de onde fica quem vai cortar (contorno dourado). Se houver um canto onde os acompanhantes costumam ficar, toque em <b>Marcar área de acompanhantes</b> e desenhe em volta dele (contorno vermelho): quem estiver ali não entra na conta. Deixe esta tela aberta: a contagem é enviada sozinha a cada 30 segundos.<br><br>
     🔒 Nenhuma imagem é gravada ou enviada. Só o número de pessoas sai deste aparelho.
   </div>
 </div>
@@ -45,8 +46,8 @@ button.sec{background:#2a2621;color:#f3ead8;border:1px solid #4a4237}
 const SB='https://uvwqpsvxsvdjkofwiqbk.supabase.co', KEY='sb_publishable_ajFii291n0ZanhmNdfnvdg_IKb6qlkK';
 const P=new URLSearchParams(location.search), SLUG=P.get('e')||'impacto', TOKEN=P.get('t')||'';
 const $=id=>document.getElementById(id), v=$('v'), c=$('c'), ctx=c.getContext('2d');
-let model=null, facing='environment', stream=null, zone=null, drawing=false, start=null, hist=[], last=null, lock=null, lastSent=0;
-try{ zone=JSON.parse(localStorage.getItem('jn_zona_'+SLUG)||'null'); }catch(_){}
+let model=null, facing='environment', stream=null, zone=null, comp=null, mode='zone', drawing=false, start=null, hist=[], last=null, lock=null, lastSent=0;
+try{ zone=JSON.parse(localStorage.getItem('jn_zona_'+SLUG)||'null'); comp=JSON.parse(localStorage.getItem('jn_comp_'+SLUG)||'null'); }catch(_){}
 const st=(t,cls)=>{ $('st').innerHTML=t; $('st').className='st '+(cls||''); };
 if(!TOKEN) st('Link sem a chave do aparelho. Use o link enviado pela J&amp;N.','err');
 
@@ -67,15 +68,19 @@ $('start').onclick=async()=>{
   st('Contando…'); loop();
 };
 $('flip').onclick=async()=>{ facing=facing==='environment'?'user':'environment'; try{ await cam(); }catch(_){} };
-$('clear').onclick=()=>{ zone=null; localStorage.removeItem('jn_zona_'+SLUG); };
-$('zone').onclick=()=>{ drawing=true; st('Arraste o dedo sobre a imagem para marcar a área de espera.'); };
+$('clear').onclick=()=>{ zone=null; comp=null; localStorage.removeItem('jn_zona_'+SLUG); localStorage.removeItem('jn_comp_'+SLUG); st('Áreas apagadas. Contando na tela toda.'); };
+$('zone').onclick=()=>{ mode='zone'; drawing=true; st('Arraste o dedo sobre a imagem para marcar a área de espera (quem vai cortar).'); };
+$('compb').onclick=()=>{ mode='comp'; drawing=true; st('Arraste o dedo sobre a imagem para marcar onde ficam os acompanhantes. Quem estiver ali não entra na conta.'); };
 
 const rel=e=>{ const r=c.getBoundingClientRect(), p=e.touches?e.touches[0]:e; return {x:(p.clientX-r.left)/r.width, y:(p.clientY-r.top)/r.height}; };
-const down=e=>{ if(!drawing) return; e.preventDefault(); start=rel(e); zone={x:start.x,y:start.y,w:0,h:0}; };
+let tmp=null;
+const down=e=>{ if(!drawing) return; e.preventDefault(); start=rel(e); tmp={x:start.x,y:start.y,w:0,h:0}; };
 const move=e=>{ if(!drawing||!start) return; e.preventDefault(); const p=rel(e);
-  zone={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(p.x-start.x),h:Math.abs(p.y-start.y)}; };
+  tmp={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(p.x-start.x),h:Math.abs(p.y-start.y)}; if(mode==='zone') zone=tmp; else comp=tmp; };
 const up=()=>{ if(!drawing||!start) return; drawing=false; start=null;
-  if(zone && zone.w>0.05 && zone.h>0.05){ localStorage.setItem('jn_zona_'+SLUG,JSON.stringify(zone)); st('Área salva. Contando…','ok'); } else { zone=null; st('Área muito pequena. Toque em marcar de novo.'); } };
+  const key=mode==='zone'?'jn_zona_':'jn_comp_';
+  if(tmp && tmp.w>0.05 && tmp.h>0.05){ localStorage.setItem(key+SLUG,JSON.stringify(tmp)); st(mode==='zone'?'Área de espera salva. Contando…':'Área de acompanhantes salva. Quem estiver nela não conta.','ok'); }
+  else { if(mode==='zone') zone=null; else comp=null; st('Área muito pequena. Toque em marcar de novo.'); } tmp=null; };
 c.addEventListener('touchstart',down,{passive:false}); c.addEventListener('touchmove',move,{passive:false}); c.addEventListener('touchend',up);
 c.addEventListener('mousedown',down); c.addEventListener('mousemove',move); c.addEventListener('mouseup',up);
 
@@ -89,10 +94,14 @@ async function loop(){
       ctx.clearRect(0,0,W,H);
       let n=0;
       preds.forEach(p=>{ const [x,y,w,h]=p.bbox, cx=(x+w/2)/W, cy=(y+h/2)/H;
-        const inside=!zone||(cx>=zone.x&&cx<=zone.x+zone.w&&cy>=zone.y&&cy<=zone.y+zone.h);
+        const inR=r=>r&&cx>=r.x&&cx<=r.x+r.w&&cy>=r.y&&cy<=r.y+r.h;
+        const inside=(!zone||inR(zone))&&!inR(comp);
         if(inside) n++;
         ctx.lineWidth=3; ctx.strokeStyle=inside?'#7fd17f':'rgba(255,255,255,.35)'; ctx.strokeRect(x,y,w,h); });
-      if(zone){ ctx.setLineDash([10,6]); ctx.lineWidth=3; ctx.strokeStyle='#c9a24a'; ctx.strokeRect(zone.x*W,zone.y*H,zone.w*W,zone.h*H); ctx.setLineDash([]); }
+      ctx.setLineDash([10,6]); ctx.lineWidth=3;
+      if(zone){ ctx.strokeStyle='#c9a24a'; ctx.strokeRect(zone.x*W,zone.y*H,zone.w*W,zone.h*H); }
+      if(comp){ ctx.strokeStyle='#ff6b5b'; ctx.strokeRect(comp.x*W,comp.y*H,comp.w*W,comp.h*H); ctx.fillStyle='rgba(255,107,91,.12)'; ctx.fillRect(comp.x*W,comp.y*H,comp.w*W,comp.h*H); }
+      ctx.setLineDash([]);
       hist.push(n); if(hist.length>15) hist.shift();
       const m=median(hist); $('n').textContent=m;
       if(Date.now()-lastSent>30000 && hist.length>=5){ lastSent=Date.now(); send(m); }
