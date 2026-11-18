@@ -27,6 +27,7 @@ button.sec{background:#2a2621;color:#f3ead8;border:1px solid #4a4237}
 <div id="stage" hidden><video id="v" playsinline muted autoplay></video><canvas id="c"></canvas></div>
 <div class="panel">
   <div class="big"><span class="n" id="n">–</span><span class="l">pessoas aguardando</span></div>
+  <div class="st" id="dbg"></div>
   <div class="st" id="st">Toque em "Iniciar" para ligar a câmera.</div>
   <button id="start">▶ Iniciar contagem</button>
   <div class="btns" id="ctl" hidden>
@@ -64,7 +65,7 @@ $('start').onclick=async()=>{
   try{ await cam(); }catch(e){ $('start').disabled=false; return st('Não consegui abrir a câmera. Permita o acesso à câmera e tente de novo.','err'); }
   $('stage').hidden=false; $('ctl').hidden=false; $('start').hidden=true; wake();
   st('Carregando a inteligência de contagem (só na primeira vez demora um pouco)…');
-  try{ model=await cocoSsd.load({base:'lite_mobilenet_v2'}); }catch(e){ return st('Falha ao carregar a contagem. Verifique a internet e recarregue a página.','err'); }
+  try{ model=await cocoSsd.load({base:'mobilenet_v2'}); }catch(e){ return st('Falha ao carregar a contagem. Verifique a internet e recarregue a página.','err'); }
   st('Contando…'); loop();
 };
 $('flip').onclick=async()=>{ facing=facing==='environment'?'user':'environment'; try{ await cam(); }catch(_){} };
@@ -84,13 +85,13 @@ const up=()=>{ if(!drawing||!start) return; drawing=false; start=null;
 c.addEventListener('touchstart',down,{passive:false}); c.addEventListener('touchmove',move,{passive:false}); c.addEventListener('touchend',up);
 c.addEventListener('mousedown',down); c.addEventListener('mousemove',move); c.addEventListener('mouseup',up);
 
-function median(a){ const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]; }
+function pct75(a){ const s=[...a].sort((x,y)=>x-y); return s[Math.min(s.length-1,Math.floor(s.length*0.75))]; }
 
 async function loop(){
   try{
     if(v.readyState>=2){
       const W=v.videoWidth, H=v.videoHeight; c.width=W; c.height=H;
-      const preds=(await model.detect(v,20,0.45)).filter(p=>p.class==='person');
+      const preds=(await model.detect(v,20,0.3)).filter(p=>p.class==='person');
       ctx.clearRect(0,0,W,H);
       let n=0;
       preds.forEach(p=>{ const [x,y,w,h]=p.bbox, cx=(x+w/2)/W, cy=(y+h/2)/H;
@@ -102,9 +103,10 @@ async function loop(){
       if(zone){ ctx.strokeStyle='#c9a24a'; ctx.strokeRect(zone.x*W,zone.y*H,zone.w*W,zone.h*H); }
       if(comp){ ctx.strokeStyle='#ff6b5b'; ctx.strokeRect(comp.x*W,comp.y*H,comp.w*W,comp.h*H); ctx.fillStyle='rgba(255,107,91,.12)'; ctx.fillRect(comp.x*W,comp.y*H,comp.w*W,comp.h*H); }
       ctx.setLineDash([]);
-      hist.push(n); if(hist.length>15) hist.shift();
-      const m=median(hist); $('n').textContent=m;
-      if(Date.now()-lastSent>30000 && hist.length>=5){ lastSent=Date.now(); send(m); }
+      hist.push(n); if(hist.length>8) hist.shift();
+      const m=pct75(hist); $('n').textContent=m;
+      $('dbg').textContent='Agora na imagem: '+preds.length+' pessoa(s) vista(s) · '+n+' dentro da área de espera';
+      if(Date.now()-lastSent>30000 && hist.length>=4){ lastSent=Date.now(); send(m); }
     }
   }catch(e){ console.log(e); }
   setTimeout(loop,1000);
